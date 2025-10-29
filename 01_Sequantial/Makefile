@@ -14,4 +14,4 @@ run_check: compile_check
 	./main_check
 
 clean:
-	rm -f main main_check solution.txt
+	rm -f main main_check *.png solution.txt

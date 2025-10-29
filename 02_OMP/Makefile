@@ -4,9 +4,6 @@ CC = g++
 compile: 
 	$(CC) $(CFLAGS) main.cpp -o main
 
-compile_check: 
-	$(CC) $(CFLAGS) main_check.cpp -o main_check
-
 run_1: compile
 	./main 1
 
@@ -50,4 +47,4 @@ show_results:
 	done
 
 clean:
-	rm -f main *.out *.err *.lsf solution.txt
+	rm -f main *.out *.err *.lsf *.txt
