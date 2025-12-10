@@ -13,12 +13,16 @@ const double Cx = -3.0, Cy = 0.0;
 const double Ax = 3.0, Ay = 0.0;
 const double Bx = 0.0, By = 4.0;
 
+// // Вершины прямоугольника П
+// const double A1 = -4.0, B1 = 4.0; // x-границы прямоугольника
+// const double A2 = -1.0, B2 = 5.0;  // y-границы прямоугольника
+
 // Вершины прямоугольника П
-const double A1 = -4.0, B1 = 4.0; // x-границы прямоугольника
-const double A2 = -1.0, B2 = 5.0;  // y-границы прямоугольника
+const double A1 = -3.001, B1 = 3.001; // x-границы прямоугольника
+const double A2 = -0.001, B2 = 4.001;  // y-границы прямоугольника
 
 // Параметры сетки
-const int M = 1200, N = 800;
+const int M = 400, N = 600;
 const double h1 = (B1 - A1) / M;
 const double h2 = (B2 - A2) / N;
 

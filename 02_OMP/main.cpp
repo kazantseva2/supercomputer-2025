@@ -18,7 +18,7 @@ const double A1 = -4.0, B1 = 4.0; // x-границы прямоугольник
 const double A2 = -1.0, B2 = 5.0;  // y-границы прямоугольника
 
 // Параметры сетки
-const int M = 400, N = 600;
+const int M = 800, N = 1200;
 const double h1 = (B1 - A1) / M;
 const double h2 = (B2 - A2) / N;
 

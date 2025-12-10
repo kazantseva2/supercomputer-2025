@@ -1,4 +1,4 @@
-CFLAGS = -O3 -Wall -Wextra -std=c++11
+CFLAGS = -o1 -Wall -Wextra -std=c++11
 CC = mpic++ 
 CC_polus = mpicxx
 
@@ -8,9 +8,6 @@ compile:
 
 compile_polus:
 	module load SpectrumMPI && $(CC_polus) $(CFLAGS) main.cpp -o main
-
-run_seq: compile
-	./main
 
 run_1: compile
 	mpirun -np 1 ./main
@@ -58,4 +55,4 @@ show_errors:
 	done
 
 clean:
-	rm -f main main_check *.png *.txt *.btr *.out *.err
+	rm -f main *.png *.txt *.btr *.out *.err

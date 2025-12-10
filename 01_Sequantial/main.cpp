@@ -18,7 +18,7 @@ const double A1 = -4.0, B1 = 4.0; // x-границы прямоугольник
 const double A2 = -1.0, B2 = 5.0;  // y-границы прямоугольника
 
 // Параметры сетки
-const int M = 800, N = 1200;
+const int M = 400, N = 600;
 const double h1 = (B1 - A1) / M;
 const double h2 = (B2 - A2) / N;
 
@@ -308,6 +308,7 @@ double dot(const vector<vector<double>>& u, const vector<vector<double>>& v) {
             result += u[i][j] * v[i][j];
         }
     }
+
     return result * h1 * h2;
 }
 
@@ -407,7 +408,8 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
         }
         
         // Проверка изменения решения
-        if (normDifference(w_old, w) < delta) {
+        double norm = normDifference(w_old, w);
+        if (norm < delta) {
             cout << "Сходимость достигнута на итерации " << k << endl;
             break;
         }
@@ -415,6 +417,10 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
         // if (k % 10 == 0) {
         //     cout << "Итерация " << k << ", невязка: " << sqrt(dot(r, r)) << endl;
         // }
+
+        if (k % 100 == 0) {
+            cout << "Итерация " << k << ", норма разности: " << norm << endl;
+        }
     }
 
 }
@@ -450,7 +456,6 @@ int main() {
             F[i][j] = compute_F(i, j);
         }
     }
-
 
     double init_time = (double)(clock() - start_time) / CLOCKS_PER_SEC;
     cout << "Время инициализации: " << init_time << " секунд" << endl;

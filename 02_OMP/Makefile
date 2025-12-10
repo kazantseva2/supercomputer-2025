@@ -1,4 +1,4 @@
-CFLAGS = -O3 -Wall -Wextra -std=c++11 -fopenmp
+CFLAGS = -o1 -Wall -Wextra -std=c++11 -fopenmp
 CC = g++
 
 compile: 

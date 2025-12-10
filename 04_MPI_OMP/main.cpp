@@ -2,13 +2,13 @@
 #include <vector>
 #include <cmath>
 #include <fstream>
-#include <ctime> 
+#include <ctime>
+#include <omp.h>
 #include <mpi.h>
 
 using namespace std;
 
 // Параметры задачи //
-
 // Область D: вершины треугольника
 const double Cx = -3.0, Cy = 0.0;
 const double Ax = 3.0, Ay = 0.0;
@@ -54,7 +54,6 @@ struct  Domain {
             dims[1] = t;
         }
 
-
         int periods[2] = {0, 0};  // Периодические границы
         MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 1, &comm_cart);
 
@@ -91,7 +90,6 @@ struct  Domain {
     }
 };
 
-
 // Координата x пересечения с прямых
 double get_x_inter(double y, double Ax, double Ay, double Bx, double By) {
     return Bx + ((Ax - Bx) / (Ay - By))  * (y - By);
@@ -119,8 +117,6 @@ bool is_left(double x, double y, double Ax, double Ay, double Bx, double By){
 }
 
 // Вычисление коэффициента a_ij:
-// Важно, что именно такой прямоугольник (симметрия относительно OY), и линия интеграла 
-// может пересекать сторону треугольника только перпендикулярно оси OX.
 double compute_a(int i, int j) {
     double x_left = A1 + (i - 0.5) * h1;
     double y_bottom = A2 + (j - 0.5) * h2;
@@ -150,8 +146,6 @@ double compute_a(int i, int j) {
 }
 
 // Вычисление коэффициента b_ij:
-// Аналогично вычислению a_ij, только линия пересекает перпендикулярно OY, 
-// а симметрией по OX не будем пользоваться, тк может быть двойной выход из области D.
 double compute_b(int i, int j) {
     double x_left = A1 + (i - 0.5) * h1;
     double x_right = A1 + (i + 0.5) * h1;
@@ -318,7 +312,7 @@ double compute_F(int i, int j) {
         return s /h1/h2;
     }
 
-    // Вне области брюхо прямоугольника (но левым краем зашел в треугольник как трапеция)
+    // Вне области брюво прямоугольника (но левым краем зашел в треугольник как трапеция)
     if (y_bottom < Cy && is_left(x_left, y_top, Ax, Ay, Bx, By)
         && is_right(x_right, y_top, Ax, Ay, Bx, By)) {
 
@@ -329,7 +323,7 @@ double compute_F(int i, int j) {
         return s /h1/h2;
     }
 
-    // Вне области брюхо прямоугольника (но правым краем зашел в треугольник как трапеция)
+    // Вне области брюво прямоугольника (но правым краем зашел в треугольник как трапеция)
     if (y_bottom < Cy && is_right(x_right, y_top, Cx, Cy, Bx, By)
         && is_left(x_left, y_top, Cx, Cy, Bx, By)) {
 
@@ -345,13 +339,14 @@ double compute_F(int i, int j) {
 
 // Функция для инициализации коэффициентов a и b с вычислением граничных значений
 void initializeCoefficients(vector<vector<double>>& a, vector<vector<double>>& b, Domain d) {
+    #pragma omp parallel for collapse(2)
     for (int i_loc = 0; i_loc < d.size_M + 2; i_loc++) {
         for (int j_loc = 0; j_loc < d.size_N + 2; j_loc++) {
             // Вычисляем глобальные индексы
             int i_global = d.start_i - 1 + i_loc;  // -1 потому что i_loc=0 это левый дополнительный край
             int j_global = d.start_j - 1 + j_loc;  // аналогично
 
-            // Нижняя строка и левый столбец не заполняются по алгоритму из задания (нужны x_(i-0.5) и y_(j - 0.5))
+            // Нижняя строка и левый столбец не заполняются по алгоритму из задания
             if (i_global != 0 && j_global != 0) {
                 a[i_loc][j_loc] = compute_a(i_global, j_global);
                 b[i_loc][j_loc] = compute_b(i_global, j_global);
@@ -362,7 +357,7 @@ void initializeCoefficients(vector<vector<double>>& a, vector<vector<double>>& b
 
 // Функция для инициализации правой части F (только внутренняя область)
 void initializeF(vector<vector<double>>& F, Domain d) {
-    // Заполняем только внутреннюю область (остальное не понадобится)
+    #pragma omp parallel for collapse(2)
     for (int i_loc = 1; i_loc <= d.size_M ; i_loc++) {
         for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
             int i_global = d.start_i - 1 + i_loc;
@@ -377,23 +372,22 @@ void applyOperator(vector<vector<double>>& Aw, vector<vector<double>>& w,
                    const vector<vector<double>>& a, const vector<vector<double>>& b,
                    Domain d) {
 
-
     // Создаем буферы для граничных значений
     vector<double> send_left(d.size_N, 0.0), send_right(d.size_N, 0.0);
     vector<double> send_bottom(d.size_M, 0.0), send_top(d.size_M, 0.0);
     vector<double> recv_left(d.size_N, 0.0), recv_right(d.size_N, 0.0);
     vector<double> recv_bottom(d.size_M, 0.0), recv_top(d.size_M, 0.0);
-        
+    
     // Заполняем буферы для отправки из ВНУТРЕННИХ границ
     for (int j = 0; j < d.size_N; j++) {
         send_left[j] = w[1][j+1];        // Внутренняя левая граница 
         send_right[j] = w[d.size_M][j+1]; // Внутренняя правая граница
     }
+    
     for (int i = 0; i < d.size_M; i++) {
         send_bottom[i] = w[i+1][1];      // Внутренняя нижняя граница
         send_top[i] = w[i+1][d.size_N];  // Внутренняя верхняя граница
     }
-
 
     // Неблокирующие операции для обмена границами
     MPI_Request requests[8] = {MPI_REQUEST_NULL};
@@ -430,14 +424,15 @@ void applyOperator(vector<vector<double>>& Aw, vector<vector<double>>& w,
     for (int j = 0; j < d.size_N; j++) {
         w[0][j+1] = recv_left[j];        // Левый
         w[d.size_M+1][j+1] = recv_right[j]; // Правый
-       // cout << recv_left[j] ;
     }
+    
     for (int i = 0; i < d.size_M; i++) {
         w[i+1][0] = recv_bottom[i];      // Нижний
         w[i+1][d.size_N+1] = recv_top[i]; // Верхний
     }
 
     // Теперь применяем оператор ко ВСЕМ внутренним точкам 
+    #pragma omp parallel for collapse(2)
     for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
         for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
             
@@ -451,13 +446,13 @@ void applyOperator(vector<vector<double>>& Aw, vector<vector<double>>& w,
             Aw[i_loc][j_loc] = -(term1 / (h1*h1) + term2 / (h2*h2));
         }
     }
-
 }
 
 // Решение системы Dz = r (диагональное предобуславливание)
 void solveDiagonal(vector<vector<double>>& z, const vector<vector<double>>& r,
                    const vector<vector<double>>& a, const vector<vector<double>>& b,
                    Domain d) {
+    #pragma omp parallel for collapse(2)
     for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
         for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
             double diag = (a[i_loc+1][j_loc] + a[i_loc][j_loc]) / (h1 * h1) 
@@ -472,6 +467,7 @@ double dot(const vector<vector<double>>& u, const vector<vector<double>>& v, Dom
     double local_result = 0.0;
     
     // Суммируем только по внутренней области процесса
+    #pragma omp parallel for collapse(2) reduction(+:local_result)
     for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
         for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
             local_result += u[i_loc][j_loc] * v[i_loc][j_loc];
@@ -490,6 +486,7 @@ double dot(const vector<vector<double>>& u, const vector<vector<double>>& v, Dom
 double normDifference(vector<vector<double>>& u_old, const vector<vector<double>>& u, Domain d) {
     double local_norm = 0.0;
     
+    #pragma omp parallel for collapse(2) reduction(+:local_norm)
     for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
         for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
             double diff = u_old[i_loc][j_loc] - u[i_loc][j_loc];
@@ -506,7 +503,6 @@ double normDifference(vector<vector<double>>& u_old, const vector<vector<double>
     return sqrt(global_norm);
 }
 
-
 void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& a, 
                     const vector<vector<double>>& b, const vector<vector<double>>& F,
                     Domain d) {
@@ -520,6 +516,8 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
 
     // Вычисление начальной невязки
     applyOperator(Ap, w, a, b, d);
+    
+    #pragma omp parallel for collapse(2)
     for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
         for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
             r[i_loc][j_loc] = F[i_loc][j_loc] - Ap[i_loc][j_loc];
@@ -530,6 +528,7 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
     solveDiagonal(z, r, a, b, d);
 
     // p1 = z0
+    #pragma omp parallel for collapse(2)
     for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
         for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
             p[i_loc][j_loc] = z[i_loc][j_loc];
@@ -540,12 +539,12 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
     double alpha = dot(z, r, d) / dot(Ap, p, d);
 
     // Обновление решения
+    #pragma omp parallel for collapse(2)
     for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
         for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
             w[i_loc][j_loc] += alpha * p[i_loc][j_loc];
         }
     }
-
 
     // Основной итерационный процесс
     int max_iter = d.size_M * d.size_N;  // Локальный размер
@@ -557,6 +556,7 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
         double beta = 1.0 / dot(z, r, d);
 
         // Обновление невязки
+        #pragma omp parallel for collapse(2)
         for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
             for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
                 r[i_loc][j_loc] -= alpha * Ap[i_loc][j_loc];
@@ -570,6 +570,7 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
         beta *= dot(z, r, d);
 
         // Новое направление спуска
+        #pragma omp parallel for collapse(2)
         for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
             for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
                 p[i_loc][j_loc] = z[i_loc][j_loc] + beta * p[i_loc][j_loc];
@@ -583,6 +584,7 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
         alpha = dot(z, r, d) / dot(Ap, p, d);
 
         // Обновление решения
+        #pragma omp parallel for collapse(2)
         for (int i_loc = 1; i_loc <= d.size_M; i_loc++) {
             for (int j_loc = 1; j_loc <= d.size_N; j_loc++) {
                 w[i_loc][j_loc] += alpha * p[i_loc][j_loc];
@@ -592,9 +594,9 @@ void conjugateGradient(vector<vector<double>>& w, const vector<vector<double>>& 
         // Проверка изменения решения (синхронизировано по всем процессам)
         double current_norm = normDifference(w_old, w, d);
         
-        // if (d.rank == 0 && k % 100 == 0) {
-        //     cout << "Итерация " << k << ", норма изменения: " << current_norm << endl;
-        // }
+        if (d.rank == 0 && k % 100 == 0) {
+            cout << "Итерация " << k << ", норма изменения: " << current_norm << endl;
+        }
         
         if (current_norm < delta) {
             if (d.rank == 0) {
@@ -647,6 +649,13 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    // Установка числа потоков OpenMP
+    int num_threads = 1;
+    if (argc > 1) {
+        num_threads = atoi(argv[1]);
+    }
+    omp_set_num_threads(num_threads);
+
     double start_time, init_time, solve_time, total_time;
     
     if (rank == 0) {
@@ -655,7 +664,9 @@ int main(int argc, char** argv) {
         cout << "Шаги: h1 = " << h1 << ", h2 = " << h2 << endl;
         cout << "Параметр epsilon = " << eps << endl;
         cout << "Параметр delta = " << delta << endl << endl;
-        cout << "Количество процессов: " << size << endl << endl;
+        cout << "Количество MPI процессов: " << size << endl;
+        cout << "Количество OpenMP потоков на процесс: " << num_threads << endl;
+        cout << "Общее число потоков: " << size * num_threads << endl << endl;
     }
     
     start_time = MPI_Wtime();
@@ -674,7 +685,6 @@ int main(int argc, char** argv) {
 
     initializeCoefficients(a, b, d);
     initializeF(F, d);
-
 
     init_time = MPI_Wtime() - start_time;
     
@@ -701,7 +711,7 @@ int main(int argc, char** argv) {
         cout << "Общее время выполнения: " << total_time << " секунд" << endl << endl;
     }
 
-   //save(w, d);
+    //save(w, d);
         
     MPI_Finalize();
     return 0;
